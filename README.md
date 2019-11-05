@@ -15,4 +15,4 @@
 
 ## Example Usage
 
-![alt text](https://github.com/DigitArc/reactNativeSwiperDeck/blob/master/app-gif.gif)
+![alt text](https://github.com/DigitArc/ReactNativeAppStoreAnimation/blob/master/app-store-animation.gif)
