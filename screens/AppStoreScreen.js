@@ -8,7 +8,8 @@ import {
   Image,
   TouchableWithoutFeedback,
   Animated,
-  Platform
+  Platform,
+  PanResponder,
 } from 'react-native';
 
 import { items } from '../data/items';
@@ -31,11 +32,51 @@ class AppStoreScreen extends React.Component {
         this.allImages = [];
         this.viewImage = null;
 
-        // MOCK ANIMATION VALUE FIR INTERPOLATING
+        // MOCK ANIMATION VALUE FOR INTERPOLATING
         this.animate = new Animated.Value(0);
 
         this.positions = new Animated.ValueXY({x : 0, y : 0});
         this.dimensions = new Animated.ValueXY({x : 0, y : 0});
+
+        // MOCK ANIMATION VALUE TO USE AT PANNING
+        this.panAnimate = new Animated.Value(0);
+
+        // PAN RESPONDER
+        this._panResponder = PanResponder.create({
+            onStartShouldSetPanResponder: (evt, gestureState) => {
+                return true
+            },
+
+            // ON MOVE HANDLER
+            onPanResponderMove: (evt, gestureState) => {
+                const { dx, dy, moveX, moveY } = gestureState;
+                
+                this.panAnimate.setValue(dy);
+            },
+
+            // ON RELEASE HANDLER
+            onPanResponderRelease: (evt, gestureState) => {
+                if (this.panAnimate._value > 150) {
+                    Animated.parallel([
+                        Animated.spring(this.panAnimate, {toValue : 0, friction : 8}),
+                        Animated.spring(this.positions.x, {toValue : this.state.oldPosition.x, friction : 8}),
+                        Animated.spring(this.positions.y, {toValue : this.state.oldPosition.y, friction : 8}),
+                        Animated.spring(this.dimensions.x, {toValue : this.state.oldPosition.width, friction : 8}),
+                        Animated.spring(this.dimensions.y, {toValue : this.state.oldPosition.height, friction : 8}),
+                        Animated.timing(this.animate, {toValue : 0, duration : 200})
+                    ]).start(() => {
+                        this.setState({
+                            selectedItem : null
+                        })
+                    });
+                } else {
+                    Animated.spring(this.panAnimate, {toValue : 0, friction : 8}).start();
+                }
+            },
+
+        });
+
+
     }  
 
     handleSelect = (index) => {
@@ -66,21 +107,34 @@ class AppStoreScreen extends React.Component {
 
                     this.viewImage.measure((dx, dy, dwidth, dheight, dpageX, dpageY) => {
                         // ABSOLUTE CONTAINER MEASUREMENT
-                        console.log(dx, dy, dwidth, dheight, dpageX, dpageY);
 
                         Animated.parallel([
-                            Animated.timing(this.positions.x, {toValue : dpageX, duration : 500}),
-                            Animated.timing(this.positions.y, {toValue : dpageY, duration : 500}),
-                            Animated.timing(this.dimensions.x, {toValue : dwidth, duration : 500}),
-                            Animated.timing(this.dimensions.y, {toValue : dheight, duration : 500}),
-                            Animated.timing(this.animate, {toValue : 1, duration : 500})
-                        ]).start()
+                            Animated.spring(this.positions.x, {toValue : dpageX, friction : 8   }),
+                            Animated.spring(this.positions.y, {toValue : dpageY, friction : 8}),
+                            Animated.spring(this.dimensions.x, {toValue : dwidth, friction : 8}),
+                            Animated.spring(this.dimensions.y, {toValue : dheight, friction : 8}),
+                            Animated.spring(this.animate, {toValue : 1, friction : 10})
+                        ]).start();
                     })
                 });
 
             })
       
-    }
+    };
+
+    handleClose = () => {
+        Animated.parallel([
+            Animated.spring(this.positions.x, {toValue : this.state.oldPosition.x, friction : 8}),
+            Animated.spring(this.positions.y, {toValue : this.state.oldPosition.y, friction : 8}),
+            Animated.spring(this.dimensions.x, {toValue : this.state.oldPosition.width, friction : 8}),
+            Animated.spring(this.dimensions.y, {toValue : this.state.oldPosition.height, friction : 8}),
+            Animated.spring(this.animate, {toValue : 0, friction : 6})
+        ]).start(() => {
+            this.setState({
+                selectedItem : null
+            })
+        });
+    };   
     
     render() {
         const absImageStyles = {
@@ -95,9 +149,21 @@ class AppStoreScreen extends React.Component {
             outputRange : [0 , 1],
         });
 
+        const imageBorderRadius = this.animate.interpolate({
+            inputRange : [0, 0.5, 1],
+            outputRange : [15, 15, 0],
+            extrapolate : 'clamp'
+        })
+
         const contentHeight = this.animate.interpolate({
             inputRange : [0, 1],
             outputRange : [0, Dimensions.get('window').height / 3]
+        });
+
+        const translateYVal = this.panAnimate.interpolate({
+            inputRange : [0, 300],
+            outputRange : [0 , 300],
+            extrapolate : 'clamp',
         })
 
         return (
@@ -138,11 +204,22 @@ class AppStoreScreen extends React.Component {
                             pointerEvents={this.state.selectedItem ? "auto" : "none"}
                         >
                         {/* IMAGE CONTAINER */}
-                        <View style={{height : Dimensions.get('window').height * 2 / 3}} ref={(view) => (this.viewImage = view)}>
-                            <Animated.Image 
+                        <View {...this._panResponder.panHandlers} style={{height : Dimensions.get('window').height * 2 / 3}} ref={(view) => (this.viewImage = view)}>
+                            <Animated.Image
                                 source={this.state.selectedItem && this.state.selectedItem.image}
-                                style={{ ...absImageStyles}} 
+                                style={{ 
+                                    ...absImageStyles,
+                                    borderRadius : imageBorderRadius,
+                                    transform : [{translateY : translateYVal}]
+                                }} 
                             />
+
+                            {/* HANDLE CLOSE EVENT */}
+                            <TouchableWithoutFeedback onPress={this.handleClose}>
+                                <Animated.View style={{position : 'absolute', top : 50, right : 40, opacity : contentOpacity}}>
+                                    <Text style={{fontSize : 25, color : 'white', fontFamily : 'Montserrat'}}>X</Text>
+                                </Animated.View>
+                            </TouchableWithoutFeedback>
                         </View>
 
                         {/* CONTENT CONTAINER */}
@@ -151,17 +228,18 @@ class AppStoreScreen extends React.Component {
                                 height : contentHeight,
                                 backgroundColor : 'white', 
                                 opacity : contentOpacity,
-                                
+                                padding : 12,
+                                transform : [{translateY : translateYVal}],
+                            
                                 }}>
-
+                                {/* TITLE */}
+                                <Text style={{fontFamily : 'Montserrat-Light', fontSize : 25, marginBottom : 10}}>{ this.state.selectedItem && this.state.selectedItem.title }</Text>
+                                {/* DESCRIPTION */}
+                                <Text style={{fontFamily : 'Montserrat-Light', fontSize : 15}}>{ this.state.selectedItem && this.state.selectedItem.description }</Text>
                         </Animated.View>
 
                     </View>
                 
-
-                
-
-          
             </View>
             )
     }
